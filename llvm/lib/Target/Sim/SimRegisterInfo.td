@@ -68,3 +68,22 @@ let RegAltNameIndices = [ABIRegAltName] in {
   def X31 : SimReg<31,"x31", ["t6"]>, DwarfRegNum<[31]>;
   }
 }
+
+def XLenVT : ValueTypeByHwMode<[RV32],
+                               [i32]>;
+def XLenRI : RegInfoByHwMode<
+      [RV32],
+      [RegInfo<32,32,32>]>;
+
+// The order of registers represents the preferred allocation sequence.
+// Registers are listed in the order caller-save, callee-save, specials.
+def GPR : RegisterClass<"RISCV", [XLenVT], 32, (add
+    (sequence "X%u", 10, 17),
+    (sequence "X%u", 5, 7),
+    (sequence "X%u", 28, 31),
+    (sequence "X%u", 8, 9),
+    (sequence "X%u", 18, 27),
+    (sequence "X%u", 0, 4)
+  )> {
+  let RegInfos = XLenRI;
+}
