@@ -12,56 +12,56 @@
 //===----------------------------------------------------------------------===//
 
 //===----------------------------------------------------------------------===//
-// Sim profiles and nodes
+// Instruction Formats
 //===----------------------------------------------------------------------===//
-
-def SDT_SimRet          : SDTypeProfile<0, 1, [SDTCisInt<0>]>;
-
-// Return
-def SimRet : SDNode<"SimISD::Ret", SDTNone,
-                     [SDNPHasChain, SDNPOptInGlue, SDNPVariadic]>;
-
-//===----------------------------------------------------------------------===//
-// Instruction format superclass
-//===----------------------------------------------------------------------===//
-
 include "SimInstrFormats.td"
 
 //===----------------------------------------------------------------------===//
-// Sim Operand, Complex Patterns and Transformations Definitions.
+// Operand and SDNode transformation definitions.
 //===----------------------------------------------------------------------===//
 
-//===----------------------------------------------------------------------===//
-// Instructions specific format
-//===----------------------------------------------------------------------===//
-
-//@Branches {
-let isBranch=1, isTerminator=1, isBarrier=1, hasDelaySlot = 1,
-    isIndirectBranch = 1 in
-class Branches<bits<8> op, string instr_asm, RegisterClass RC>:
-  SimInst<op, (outs), (ins RC:$r1),
-     !strconcat(instr_asm, "\t$r1"), [(brind RC:$r1)]> {
-}
-//@Branches }
-
-// Return instruction
-class RetBase<RegisterClass RC>: Branches<0x3c, "RET", RC> {
-  let isReturn = 1;
-  let isCodeGenOnly = 1;
-  let hasCtrlDep = 1;
-  let hasExtraSrcRegAllocReq = 1;
+class ImmAsmOperand<string prefix, int width, string suffix> : AsmOperandClass {
+  let Name = prefix # "Imm" # width # suffix;
+  let RenderMethod = "addImmOperands";
+  let DiagnosticType = !strconcat("Invalid", Name);
 }
 
+class SImmAsmOperand<int width, string suffix = "">
+    : ImmAsmOperand<"S", width, suffix> {
+}
+
+// A 13-bit signed immediate where the least significant bit is zero.
+def simm13_lsb0 : Operand<OtherVT> {
+  let ParserMatchClass = SImmAsmOperand<13, "Lsb0">;
+  let PrintMethod = "printBranchOperand";
+  let EncoderMethod = "getImmOpValueAsr1";
+  let DecoderMethod = "decodeSImmOperandAndLsl1<13>";
+  let OperandType = "OPERAND_PCREL";
+}
 
 //===----------------------------------------------------------------------===//
-// Instruction definition
+// Instruction Class Templates
 //===----------------------------------------------------------------------===//
+def WriteJmp        : SchedWrite;
+def ReadJmp         : SchedRead;
+
+let hasSideEffects = 0, mayLoad = 0, mayStore = 0 in
+class BranchCC_rri<bits<3> funct3, string opcodestr>
+    : SimInstB<funct3, OPC_BRANCH, (outs),
+              (ins GPR:$rs1, GPR:$rs2, simm13_lsb0:$imm12),
+              opcodestr, "$rs1, $rs2, $imm12">,
+      Sched<[WriteJmp, ReadJmp, ReadJmp]> {
+  let isBranch = 1;
+  let isTerminator = 1;
+}
 
 //===----------------------------------------------------------------------===//
-// Sim Instructions
+// Instructions
 //===----------------------------------------------------------------------===//
 
-def RET     : RetBase<CPURegs>;
-
-/// No operation
-def NOP   : SimInst<0, (outs), (ins), "nop", []>;
+def BEQ  : BranchCC_rri<0b000, "beq">;
+def BNE  : BranchCC_rri<0b001, "bne">;
+def BLT  : BranchCC_rri<0b100, "blt">;
+def BGE  : BranchCC_rri<0b101, "bge">;
+def BLTU : BranchCC_rri<0b110, "bltu">;
+def BGEU : BranchCC_rri<0b111, "bgeu">;

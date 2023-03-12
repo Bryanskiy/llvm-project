@@ -69,15 +69,16 @@ let RegAltNameIndices = [ABIRegAltName] in {
   }
 }
 
-def XLenVT : ValueTypeByHwMode<[RV32],
+defvar Sim32 = DefaultMode;
+def XLenVT : ValueTypeByHwMode<[Sim32],
                                [i32]>;
 def XLenRI : RegInfoByHwMode<
-      [RV32],
+      [Sim32],
       [RegInfo<32,32,32>]>;
 
 // The order of registers represents the preferred allocation sequence.
 // Registers are listed in the order caller-save, callee-save, specials.
-def GPR : RegisterClass<"RISCV", [XLenVT], 32, (add
+def GPR : RegisterClass<"Sim", [XLenVT], 32, (add
     (sequence "X%u", 10, 17),
     (sequence "X%u", 5, 7),
     (sequence "X%u", 28, 31),
