@@ -35,11 +35,7 @@ def simInstrInfo : InstrInfo;
 // sim processors supported.
 //===----------------------------------------------------------------------===//
 
-class Proc<string Name, list<SubtargetFeature> Features>
- : Processor<Name, NoItineraries, Features>;
-
-def : Proc<"generic", []>;
-//def : Proc<"dummy-st", []>;
+def : ProcessorModel<"generic-32", NoSchedModel, []>;
 
 // Will generate simGenAsmWrite.inc included by simInstPrinter.cpp, contents
 //  as follows,
