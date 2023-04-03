@@ -472,7 +472,7 @@ TargetInfo *AllocateTarget(const llvm::Triple &Triple,
     }
   
   case llvm::Triple::sim:
-    return new SimTargetInfo(Triple, Opts);
+    return new simTargetInfo(Triple, Opts);
 
   case llvm::Triple::systemz:
     switch (os) {
