@@ -252,7 +252,7 @@ void simInstrInfo::storeRegToStackSlot(MachineBasicBlock &MBB,
       MachinePointerInfo::getFixedStack(*MF, FI), MachineMemOperand::MOStore,
       MFI.getObjectSize(FI), MFI.getObjectAlign(FI));
 
-  BuildMI(MBB, I, DL, get(sim::STI_))
+  BuildMI(MBB, I, DL, get(sim::SW))
       .addReg(SrcReg, getKillRegState(IsKill))
       .addFrameIndex(FI)
       .addImm(0)
@@ -303,7 +303,7 @@ unsigned simInstrInfo::insertBranch(
 
   // Unconditional branch.
   if (Cond.empty()) {
-    MachineInstr &MI = *BuildMI(&MBB, DL, get(sim::B)).addMBB(TBB);
+    MachineInstr &MI = *BuildMI(&MBB, DL, get(sim::PseudoBR)).addMBB(TBB);
     if (BytesAdded)
       *BytesAdded += getInstSizeInBytes(MI);
     return 1;
@@ -321,7 +321,7 @@ unsigned simInstrInfo::insertBranch(
     return 1;
 
   // Two-way conditional branch.
-  MachineInstr &MI = *BuildMI(&MBB, DL, get(sim::B)).addMBB(FBB);
+  MachineInstr &MI = *BuildMI(&MBB, DL, get(sim::PseudoBR)).addMBB(FBB);
   if (BytesAdded)
     *BytesAdded += getInstSizeInBytes(MI);
   return 2;

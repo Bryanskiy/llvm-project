@@ -124,6 +124,10 @@ class SImmAsmOperand<int width, string suffix = "">
     : ImmAsmOperand<"S", width, suffix> {
 }
 
+class UImmAsmOperand<int width, string suffix = "">
+    : ImmAsmOperand<"U", width, suffix> {
+}
+
 def simm12 : Operand<XLenVT>, ImmLeaf<XLenVT, [{return isInt<12>(Imm);}]> {
   let ParserMatchClass = SImmAsmOperand<12>;
   let EncoderMethod = "getImmOpValue";
@@ -147,7 +151,46 @@ def simm13_lsb0 : Operand<OtherVT> {
   let OperandType = "OPERAND_PCREL";
 }
 
-//===----------------------------------------------------------------------===//RVInst
+class UImm20Operand : Operand<XLenVT> {
+  let EncoderMethod = "getImmOpValue";
+  let DecoderMethod = "decodeUImmOperand<20>";
+  let MCOperandPredicate = [{
+    int64_t Imm;
+    if (MCOp.evaluateAsConstantImm(Imm))
+      return isUInt<20>(Imm);
+    return MCOp.isBareSymbolRef();
+  }];
+  let OperandType = "OPERAND_UIMM20";
+  let OperandNamespace = "simOp";
+}
+
+def uimm20_lui : UImm20Operand {
+  let ParserMatchClass = UImmAsmOperand<20, "LUI">;
+}
+def uimm20_auipc : UImm20Operand {
+  let ParserMatchClass = UImmAsmOperand<20, "AUIPC">;
+}
+
+def Simm21Lsb0JALAsmOperand : SImmAsmOperand<21, "Lsb0JAL"> {
+  let ParserMethod = "parseJALOffset";
+}
+
+// A 21-bit signed immediate where the least significant bit is zero.
+def simm21_lsb0_jal : Operand<OtherVT> {
+  let ParserMatchClass = Simm21Lsb0JALAsmOperand;
+  let PrintMethod = "printBranchOperand";
+  let EncoderMethod = "getImmOpValueAsr1";
+  let DecoderMethod = "decodeSImmOperandAndLsl1<21>";
+  let MCOperandPredicate = [{
+    int64_t Imm;
+    if (MCOp.evaluateAsConstantImm(Imm))
+      return isShiftedInt<20, 1>(Imm);
+    return MCOp.isBareSymbolRef();
+  }];
+  let OperandType = "OPERAND_PCREL";
+}
+
+//===----------------------------------------------------------------------===//simInst
 // Instruction Class Templates
 //===----------------------------------------------------------------------===//
 
@@ -194,6 +237,25 @@ class Store_rri<bits<3> funct3, string opcodestr>
 // Instructions
 //===----------------------------------------------------------------------===//
 
+let hasSideEffects = 0, mayLoad = 0, mayStore = 0 in {
+let isReMaterializable = 1, isAsCheapAsAMove = 1 in
+def LUI : simInstU<OPC_LUI, (outs GPR:$rd), (ins uimm20_lui:$imm20),
+                  "lui", "$rd, $imm20">, Sched<[WriteIALU]>;
+
+def AUIPC : simInstU<OPC_AUIPC, (outs GPR:$rd), (ins uimm20_auipc:$imm20),
+                    "auipc", "$rd, $imm20">, Sched<[WriteIALU]>;
+
+let isCall = 1 in
+def JAL : simInstJ<OPC_JAL, (outs GPR:$rd), (ins simm21_lsb0_jal:$imm20),
+                  "jal", "$rd, $imm20">, Sched<[WriteJal]>;
+
+let isCall = 1 in
+def JALR : simInstI<0b000, OPC_JALR, (outs GPR:$rd),
+                   (ins GPR:$rs1, simm12:$imm12),
+                   "jalr", "$rd, ${imm12}(${rs1})">,
+           Sched<[WriteJalr, ReadJalr]>;
+} // hasSideEffects = 0, mayLoad = 0, mayStore = 0
+
 def BEQ  : BranchCC_rri<0b000, "beq">;
 def BNE  : BranchCC_rri<0b001, "bne">;
 def BLT  : BranchCC_rri<0b100, "blt">;
@@ -213,6 +275,40 @@ def SW : Store_rri<0b010, "sw">, Sched<[WriteSTW, ReadStoreData, ReadMemBase]>;
 
 
 def ADDI  : ALU_ri<0b000, "addi">;
+
+//===----------------------------------------------------------------------===//
+// Pseudo-instructions and codegen patterns
+//
+// Naming convention: For 'generic' pattern classes, we use the naming
+// convention PatTy1Ty2. For pattern classes which offer a more complex
+// expansion, prefix the class name, e.g. BccPat.
+//===----------------------------------------------------------------------===//
+
+/// Branches and jumps
+
+// Match `sim_brcc` and lower to the appropriate RISC-V branch instruction.
+class BccPat<CondCode Cond, simInstB Inst>
+    : Pat<(sim_brcc GPR:$rs1, GPR:$rs2, Cond, bb:$imm12),
+          (Inst GPR:$rs1, GPR:$rs2, simm13_lsb0:$imm12)>;
+
+def : BccPat<SETEQ, BEQ>;
+def : BccPat<SETNE, BNE>;
+def : BccPat<SETLT, BLT>;
+def : BccPat<SETGE, BGE>;
+def : BccPat<SETULT, BLTU>;
+def : BccPat<SETUGE, BGEU>;
+
+let isBarrier = 1, isBranch = 1, isTerminator = 1 in
+def PseudoBR : Pseudo<(outs), (ins simm21_lsb0_jal:$imm20), [(br bb:$imm20)]>,
+               PseudoInstExpansion<(JAL X0, simm21_lsb0_jal:$imm20)>;
+
+let isBarrier = 1, isBranch = 1, isIndirectBranch = 1, isTerminator = 1 in
+def PseudoBRIND : Pseudo<(outs), (ins GPRJALR:$rs1, simm12:$imm12), []>,
+                  PseudoInstExpansion<(JALR X0, GPR:$rs1, simm12:$imm12)>;
+
+def : Pat<(brind GPRJALR:$rs1), (PseudoBRIND GPRJALR:$rs1, 0)>;
+def : Pat<(brind (add GPRJALR:$rs1, simm12:$imm12)),
+          (PseudoBRIND GPRJALR:$rs1, simm12:$imm12)>;
 
 // Pessimistically assume the stack pointer will be clobbered
 let Defs = [X2], Uses = [X2] in {
