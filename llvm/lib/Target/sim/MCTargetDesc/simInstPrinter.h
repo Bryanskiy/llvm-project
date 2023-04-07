@@ -27,14 +27,5 @@ public:
 };
 } // end namespace llvm
 
-// Defines symbolic names for sim registers.
-#define GET_REGINFO_ENUM
-#include "simGenRegisterInfo.inc"
-
-// Defines symbolic names for sim instructions.
-#define GET_INSTRINFO_ENUM
-#define GET_INSTRINFO_MC_HELPER_DECLS
-#include "simGenInstrInfo.inc"
-
 
 #endif // LLVM_LIB_TARGET_sim_INSTPRINTER_simINSTPRINTER_H

@@ -14,6 +14,12 @@ using namespace llvm;
 
 #define DEBUG_TYPE "asm-printer"
 
+#define GET_REGINFO_ENUM
+#include "simGenRegisterInfo.inc"
+
+#include "simGenInstrInfo.inc"
+#include "simGenSubtargetInfo.inc"
+
 #include "simGenAsmWriter.inc"
 
 void simInstPrinter::printRegName(raw_ostream &O, unsigned RegNo) const {
@@ -56,4 +62,16 @@ void simInstPrinter::printBranchOperand(const MCInst *MI, uint64_t Address,
   } else {
     O << MO.getImm();
   }
+}
+
+
+// Print architectural register names rather than the ABI names (such as x2
+// instead of sp).
+// TODO: Make RISCVInstPrinter::getRegisterName non-static so that this can a
+// member.
+static bool ArchRegNames;
+
+const char *simInstPrinter::getRegisterName(unsigned RegNo) {
+  return getRegisterName(RegNo, ArchRegNames ? sim::NoRegAltName
+                                             : sim::ABIRegAltName);
 }
