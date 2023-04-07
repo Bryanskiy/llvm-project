@@ -23,12 +23,12 @@ void simFrameLowering::determineCalleeSaves(MachineFunction &MF,
   // Unconditionally spill RA and FP only if the function uses a frame
   // pointer.
   if (hasFP(MF)) {
-    SavedRegs.set(sim::RA);
-    SavedRegs.set(sim::FP);
+    SavedRegs.set(sim::X1);
+    SavedRegs.set(sim::X8);
   }
   // Mark BP as used if function has dedicated base pointer.
   if (hasBP(MF))
-    SavedRegs.set(sim::BP);
+    SavedRegs.set(sim::X9);
 }
 
 // TODO: Build insns

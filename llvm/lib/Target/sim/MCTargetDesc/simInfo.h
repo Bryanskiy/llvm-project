@@ -30,6 +30,14 @@ enum OperandType : unsigned {
 };
 } // namespace simOp
 
+namespace simABI {
+// Returns the register used to hold the stack pointer after realignment.
+MCRegister getBPReg();
+
+// Returns the register holding shadow call stack pointer.
+MCRegister getSCSPReg();
+} // end namespace simABI
+
 } // end namespace llvm
 
 #endif
