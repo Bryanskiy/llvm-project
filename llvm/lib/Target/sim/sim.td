@@ -37,6 +37,11 @@ def simInstrInfo : InstrInfo;
 
 def : ProcessorModel<"generic-32", NoSchedModel, []>;
 
+def simAsmParser : AsmParser {
+  let ShouldEmitMatchRegisterAltName = 1;
+  let AllowDuplicateRegisterNames = 1;
+}
+
 // Will generate simGenAsmWrite.inc included by simInstPrinter.cpp, contents
 //  as follows,
 // void simInstPrinter::printInstruction(const MCInst *MI, raw_ostream &O) {...}

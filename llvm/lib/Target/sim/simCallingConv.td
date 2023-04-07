@@ -5,30 +5,15 @@
 //===----------------------------------------------------------------------===//
 // sim Return Value Calling Convention
 //===----------------------------------------------------------------------===//
-def RetCC_sim : CallingConv<[
-  // i32 return values
-  CCIfType<[i32, i64], CCAssignToReg<[R9, R10, R11, R12]>>,
 
-  // Integer values get stored in stack slots that are 4 bytes in
-  // size and 4-byte aligned.
-  CCIfType<[i64], CCAssignToStack<2, 1>>,
-  CCIfType<[i32], CCAssignToStack<1, 1>>
-]>;
+// Needed for implementation of RISCVRegisterInfo::getNoPreservedMask()
+def CSR_NoRegs : CalleeSavedRegs<(add)>;
 
-//===----------------------------------------------------------------------===//
-// sim Argument Calling Conventions
-//===----------------------------------------------------------------------===//
-def CC_sim : CallingConv<[
-  // Promote i8/i16 arguments to i32.
-  CCIfType<[i8, i16], CCPromoteToType<i32>>,
-
-  // The first 4 integer arguments are passed in integer registers.
-  CCIfType<[i32, i64], CCAssignToReg<[R9, R10, R11, R12]>>,
-
-  // Integer values get stored in stack slots that are 4 bytes in
-  // size and 4-byte aligned.
-  CCIfType<[i64], CCAssignToStack<2, 1>>,
-  CCIfType<[i32], CCAssignToStack<1, 1>>
-]>;
-
-def CSR_sim : CalleeSavedRegs<(add R0, R1, R3, R5, R6, R7, R8)>;
+// Interrupt handler needs to save/restore all registers that are used,
+// both Caller and Callee saved registers.
+def CSR_Interrupt : CalleeSavedRegs<(add X1,
+    (sequence "X%u", 3, 9),
+    (sequence "X%u", 10, 11),
+    (sequence "X%u", 12, 17),
+    (sequence "X%u", 18, 27),
+    (sequence "X%u", 28, 31))>;

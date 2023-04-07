@@ -31,7 +31,7 @@ static MCInstrInfo *createsimMCInstrInfo() {
 
 static MCRegisterInfo *createsimMCRegisterInfo(const Triple &TT) {
   auto *X = new MCRegisterInfo();
-  InitsimMCRegisterInfo(X, sim::R1);
+  InitsimMCRegisterInfo(X, sim::X1);
   return X;
 }
 
@@ -44,7 +44,7 @@ static MCAsmInfo *createsimMCAsmInfo(const MCRegisterInfo &MRI,
                                       const Triple &TT,
                                       const MCTargetOptions &Options) {
   MCAsmInfo *MAI = new simMCAsmInfo(TT);
-  MCRegister SP = MRI.getDwarfRegNum(sim::R2, true);
+  MCRegister SP = MRI.getDwarfRegNum(sim::X2, true);
   MCCFIInstruction Inst = MCCFIInstruction::cfiDefCfa(nullptr, SP, 0);
   MAI->addInitialFrameState(Inst);
   return MAI;

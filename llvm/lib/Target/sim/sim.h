@@ -27,11 +27,6 @@ FunctionPass *createsimISelDag(simTargetMachine &TM,
 
 namespace sim {
 enum {
-  GP = sim::R0,
-  RA = sim::R1,
-  SP = sim::R2,
-  FP = sim::R3,
-  BP = sim::R4,
 };
 } // namespace sim
 

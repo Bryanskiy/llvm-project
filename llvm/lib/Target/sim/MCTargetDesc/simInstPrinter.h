@@ -15,6 +15,7 @@ public:
   std::pair<const char *, uint64_t> getMnemonic(const MCInst *MI) override;
   void printInstruction(const MCInst *MI, uint64_t Address, raw_ostream &O);
   static const char *getRegisterName(unsigned RegNo);
+  static const char *getRegisterName(unsigned RegNo, unsigned AltIdx);
 
   void printRegName(raw_ostream &OS, unsigned RegNo) const override;
   void printInst(const MCInst *MI, uint64_t Address, StringRef Annot,
@@ -25,5 +26,15 @@ public:
                           raw_ostream &O);
 };
 } // end namespace llvm
+
+// Defines symbolic names for sim registers.
+#define GET_REGINFO_ENUM
+#include "simGenRegisterInfo.inc"
+
+// Defines symbolic names for sim instructions.
+#define GET_INSTRINFO_ENUM
+#define GET_INSTRINFO_MC_HELPER_DECLS
+#include "simGenInstrInfo.inc"
+
 
 #endif // LLVM_LIB_TARGET_sim_INSTPRINTER_simINSTPRINTER_H
