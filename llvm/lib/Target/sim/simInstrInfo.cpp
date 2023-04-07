@@ -49,19 +49,19 @@ unsigned simInstrInfo::isStoreToStackSlot(const MachineInstr &MI,
 static simCC::CondCode getCondFromBranchOpc(unsigned Opc) {
   switch (Opc) {
   default:
-    return simCC::INVALID;
+    return simCC::COND_INVALID;
   case sim::BEQ:
-    return simCC::EQ;
+    return simCC::COND_EQ;
   case sim::BNE:
-    return simCC::NE;
-  case sim::BLE:
-    return simCC::LE;
-  case sim::BGT:
-    return simCC::GT;
-  case sim::BLEU:
-    return simCC::LEU;
-  case sim::BGTU:
-    return simCC::GTU;
+    return simCC::COND_NE;
+  case sim::BLT:
+    return simCC::COND_LT;
+  case sim::BGE:
+    return simCC::COND_GE;
+  case sim::BLTU:
+    return simCC::COND_LTU;
+  case sim::BGEU:
+    return simCC::COND_GEU;
   }
 }
 
@@ -81,18 +81,18 @@ const MCInstrDesc &simInstrInfo::getBrCond(simCC::CondCode CC) const {
   switch (CC) {
   default:
     llvm_unreachable("Unknown condition code!");
-  case simCC::EQ:
+  case simCC::COND_EQ:
     return get(sim::BEQ);
-  case simCC::NE:
+  case simCC::COND_NE:
     return get(sim::BNE);
-  case simCC::LE:
-    return get(sim::BLE);
-  case simCC::GT:
-    return get(sim::BGT);
-  case simCC::LEU:
-    return get(sim::BLEU);
-  case simCC::GTU:
-    return get(sim::BGTU);
+  case simCC::COND_LT:
+    return get(sim::BLT);
+  case simCC::COND_GE:
+    return get(sim::BGE);
+  case simCC::COND_LTU:
+    return get(sim::BLTU);
+  case simCC::COND_GEU:
+    return get(sim::BGEU);
   }
 }
 
@@ -100,22 +100,22 @@ simCC::CondCode simCC::getOppositeBranchCondition(simCC::CondCode CC) {
   switch (CC) {
   default:
     llvm_unreachable("Unrecognized conditional branch");
-  case simCC::EQ:
-    return simCC::NE;
-  case simCC::NE:
-    return simCC::EQ;
-  case simCC::LE:
-    return simCC::GT;
-  case simCC::GT:
-    return simCC::LE;
-  case simCC::LEU:
-    return simCC::GTU;
-  case simCC::GTU:
-    return simCC::LEU;
+  case simCC::COND_EQ:
+    return simCC::COND_NE;
+  case simCC::COND_NE:
+    return simCC::COND_EQ;
+  case simCC::COND_LT:
+    return simCC::COND_GE;
+  case simCC::COND_GE:
+    return simCC::COND_LT;
+  case simCC::COND_LTU:
+    return simCC::COND_GEU;
+  case simCC::COND_GEU:
+    return simCC::COND_LTU;
   }
 }
 
-// TODO: inherited from riscv
+// TODO: inherited from sim
 bool simInstrInfo::analyzeBranch(MachineBasicBlock &MBB,
                                   MachineBasicBlock *&TBB,
                                   MachineBasicBlock *&FBB,
@@ -275,7 +275,7 @@ void simInstrInfo::loadRegFromStackSlot(MachineBasicBlock &MBB,
       MachinePointerInfo::getFixedStack(*MF, FI), MachineMemOperand::MOLoad,
       MFI.getObjectSize(FI), MFI.getObjectAlign(FI));
 
-  BuildMI(MBB, I, DL, get(sim::LDI), DstReg)
+  BuildMI(MBB, I, DL, get(sim::LW), DstReg)
       .addFrameIndex(FI)
       .addImm(0)
       .addMemOperand(MMO);

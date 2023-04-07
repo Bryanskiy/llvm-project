@@ -7,13 +7,13 @@ namespace llvm {
 
 namespace simCC {
 enum CondCode {
-  EQ,
-  NE,
-  LE,
-  GT,
-  LEU,
-  GTU,
-  INVALID,
+  COND_EQ,
+  COND_NE,
+  COND_LT,
+  COND_GE,
+  COND_LTU,
+  COND_GEU,
+  COND_INVALID
 };
 
 CondCode getOppositeBranchCondition(CondCode);
@@ -25,8 +25,23 @@ enum BRCondCode {
 
 namespace simOp {
 enum OperandType : unsigned {
-  OPERAND_SIMM16 = MCOI::OPERAND_FIRST_TARGET,
-  OPERAND_UIMM16,
+  OPERAND_FIRST_RISCV_IMM = MCOI::OPERAND_FIRST_TARGET,
+  OPERAND_UIMM2 = OPERAND_FIRST_RISCV_IMM,
+  OPERAND_UIMM3,
+  OPERAND_UIMM4,
+  OPERAND_UIMM5,
+  OPERAND_UIMM7,
+  OPERAND_UIMM12,
+  OPERAND_SIMM12,
+  OPERAND_SIMM12_LSB00000,
+  OPERAND_UIMM20,
+  OPERAND_UIMMLOG2XLEN,
+  OPERAND_RVKRNUM,
+  OPERAND_LAST_RISCV_IMM = OPERAND_RVKRNUM,
+  // Operand is either a register or uimm5, this is used by V extension pseudo
+  // instructions to represent a value that be passed as AVL to either vsetvli
+  // or vsetivli.
+  OPERAND_AVL,
 };
 } // namespace simOp
 

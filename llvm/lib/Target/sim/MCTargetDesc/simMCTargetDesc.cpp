@@ -14,14 +14,14 @@
 
 using namespace llvm;
 
+#define GET_REGINFO_MC_DESC
+#include "simGenRegisterInfo.inc"
+
 #define GET_INSTRINFO_MC_DESC
 #include "simGenInstrInfo.inc"
 
 #define GET_SUBTARGETINFO_MC_DESC
 #include "simGenSubtargetInfo.inc"
-
-#define GET_REGINFO_MC_DESC
-#include "simGenRegisterInfo.inc"
 
 static MCInstrInfo *createsimMCInstrInfo() {
   auto *X = new MCInstrInfo();

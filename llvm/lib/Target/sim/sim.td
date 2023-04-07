@@ -26,6 +26,7 @@ include "simRegisterInfo.td"
 // Calling Conv, Instruction Descriptions
 //===----------------------------------------------------------------------===//
 
+include "simSchedule.td"
 include "simCallingConv.td"
 
 include "simInstrInfo.td"
