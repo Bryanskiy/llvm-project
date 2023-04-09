@@ -1,10 +1,20 @@
+//===-- RISCVCallingConv.td - Calling Conventions RISCV ----*- tablegen -*-===//
+//
+// Part of the LLVM Project, under the Apache License v2.0 with LLVM Exceptions.
+// See https://llvm.org/LICENSE.txt for license information.
+// SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
+//
 //===----------------------------------------------------------------------===//
-// This describes the calling conventions for sim architecture.
+//
+// This describes the calling conventions for the RISCV architecture.
+//
 //===----------------------------------------------------------------------===//
 
-//===----------------------------------------------------------------------===//
-// sim Return Value Calling Convention
-//===----------------------------------------------------------------------===//
+// The RISC-V calling convention is handled with custom code in
+// RISCVISelLowering.cpp (CC_RISCV).
+
+def CSR_ILP32_LP64
+    : CalleeSavedRegs<(add X1, X3, X4, X8, X9, (sequence "X%u", 18, 27))>;
 
 // Needed for implementation of RISCVRegisterInfo::getNoPreservedMask()
 def CSR_NoRegs : CalleeSavedRegs<(add)>;

@@ -19,12 +19,15 @@
 
 using namespace llvm;
 
+static_assert(sim::X1 == sim::X0 + 1, "Register list not consecutive");
+static_assert(sim::X31 == sim::X0 + 31, "Register list not consecutive");
+
 #define DEBUG_TYPE "sim-reg-info"
 
 #define GET_REGINFO_TARGET_DESC
 #include "simGenRegisterInfo.inc"
 
-simRegisterInfo::simRegisterInfo() : simGenRegisterInfo(sim::R1) {}
+simRegisterInfo::simRegisterInfo() : simGenRegisterInfo(sim::X1) {}
 
 #if 0
 bool simRegisterInfo::needsFrameMoves(const MachineFunction &MF) {
@@ -34,16 +37,23 @@ bool simRegisterInfo::needsFrameMoves(const MachineFunction &MF) {
 
 const MCPhysReg *
 simRegisterInfo::getCalleeSavedRegs(const MachineFunction *MF) const {
-  return CSR_sim_SaveList;
+  auto &Subtarget = MF->getSubtarget<simSubtarget>();
+  if (MF->getFunction().getCallingConv() == CallingConv::GHC)
+    return CSR_NoRegs_SaveList;
+  if (MF->getFunction().hasFnAttribute("interrupt")) {
+    return CSR_Interrupt_SaveList;
+  }
+
+  return CSR_Interrupt_SaveList;
 }
 
 // TODO: check cconv
 BitVector simRegisterInfo::getReservedRegs(const MachineFunction &MF) const {
   BitVector Reserved(getNumRegs());
-  Reserved.set(sim::R0);
-  Reserved.set(sim::R1);
-  Reserved.set(sim::R2);
-  Reserved.set(sim::R3);
+  markSuperRegs(Reserved, sim::X0); // zero
+  markSuperRegs(Reserved, sim::X2); // sp
+  markSuperRegs(Reserved, sim::X3); // gp
+  markSuperRegs(Reserved, sim::X4); // tp
   return Reserved;
 }
 
@@ -86,11 +96,18 @@ void simRegisterInfo::eliminateFrameIndex(MachineBasicBlock::iterator II,
 
 Register simRegisterInfo::getFrameRegister(const MachineFunction &MF) const {
   const TargetFrameLowering *TFI = getFrameLowering(MF);
-  return TFI->hasFP(MF) ? sim::FP : sim::SP;
+  return TFI->hasFP(MF) ? sim::X8 : sim::X2;
 }
 
 const uint32_t *
 simRegisterInfo::getCallPreservedMask(const MachineFunction &MF,
                                        CallingConv::ID CC) const {
-  return CSR_sim_RegMask;
+  auto &Subtarget = MF.getSubtarget<simSubtarget>();
+
+  switch (Subtarget.getTargetABI()) {
+  default:
+    llvm_unreachable("Unrecognized ABI");
+  case simABI::ABI_ILP32:
+    return CSR_ILP32_LP64_RegMask;
+  }
 }

@@ -24,6 +24,9 @@ class simSubtarget : public simGenSubtargetInfo {
   simFrameLowering FrameLowering;
   simTargetLowering TLInfo;
   SelectionDAGTargetInfo TSInfo;
+  simABI::ABI TargetABI = simABI::ABI_ILP32;
+  MVT XLenVT = MVT::i32;
+  unsigned XLen = 32;
 
 public:
   simSubtarget(const Triple &TT, const std::string &CPU, const std::string &FS,
@@ -43,6 +46,10 @@ public:
   const SelectionDAGTargetInfo *getSelectionDAGInfo() const override {
     return &TSInfo;
   }
+
+  simABI::ABI getTargetABI() const { return TargetABI; }
+  MVT getXLenVT() const { return XLenVT; }
+  unsigned getXLen() const { return XLen; }
 };
 
 } // end namespace llvm

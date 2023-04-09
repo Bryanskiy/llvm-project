@@ -1,5 +1,4 @@
 #include "simISelLowering.h"
-#include "MCTargetDesc/simInfo.h"
 #include "sim.h"
 #include "simMachineFunctionInfo.h"
 #include "simRegisterInfo.h"
@@ -40,7 +39,7 @@ void simTargetLowering::ReplaceNodeResults(SDNode *N,
 
 simTargetLowering::simTargetLowering(const TargetMachine &TM,
                                        const simSubtarget &STI)
-    : TargetLowering(TM), STI(STI) {
+    : TargetLowering(TM), Subtarget(STI) {
   addRegisterClass(MVT::i32, &sim::GPRRegClass);
 
   computeRegisterProperties(STI.getRegisterInfo());
@@ -77,10 +76,54 @@ const char *simTargetLowering::getTargetNodeName(unsigned Opcode) const {
   switch (Opcode) {
   case simISD::CALL:
     return "simISD::CALL";
-  case simISD::RET:
+  case simISD::RET_FLAG:
     return "simISD::RET";
   }
   return nullptr;
+}
+
+
+// TODO: rewrite
+static SDValue convertValVTToLocVT(SelectionDAG &DAG, SDValue Val,
+                                   const CCValAssign &VA, const SDLoc &DL,
+                                   const simSubtarget &Subtarget) {
+  EVT LocVT = VA.getLocVT();
+
+  if (VA.getValVT() == MVT::f32)
+    llvm_unreachable("");
+
+  switch (VA.getLocInfo()) {
+  default:
+    llvm_unreachable("Unexpected CCValAssign::LocInfo");
+  case CCValAssign::Full:
+    break;
+  case CCValAssign::BCvt:
+    llvm_unreachable("");
+    Val = DAG.getNode(ISD::BITCAST, DL, LocVT, Val);
+    break;
+  }
+  return Val;
+}
+
+// Convert Val to a ValVT. Should not be called for CCValAssign::Indirect
+// values.
+// TODO: rewrite
+static SDValue convertLocVTToValVT(SelectionDAG &DAG, SDValue Val,
+                                   const CCValAssign &VA, const SDLoc &DL,
+                                   const simSubtarget &Subtarget) {
+  if (VA.getValVT() == MVT::f32)
+    llvm_unreachable("");
+
+  switch (VA.getLocInfo()) {
+  default:
+    llvm_unreachable("Unexpected CCValAssign::LocInfo");
+  case CCValAssign::Full:
+    break;
+  case CCValAssign::BCvt:
+    llvm_unreachable("");
+    Val = DAG.getNode(ISD::BITCAST, DL, VA.getValVT(), Val);
+  }
+  return Val;
 }
 
 //===----------------------------------------------------------------------===//
@@ -288,6 +331,59 @@ static Align getPrefTypeAlign(EVT VT, SelectionDAG &DAG) {
       VT.getTypeForEVT(*DAG.getContext()));
 }
 
+void simTargetLowering::analyzeOutputArgs(
+    MachineFunction &MF, CCState &CCInfo,
+    const SmallVectorImpl<ISD::OutputArg> &Outs, bool IsRet,
+    CallLoweringInfo *CLI, simCCAssignFn Fn) const {
+  unsigned NumArgs = Outs.size();
+
+  Optional<unsigned> FirstMaskArgument;
+  for (unsigned i = 0; i != NumArgs; i++) {
+    MVT ArgVT = Outs[i].VT;
+    ISD::ArgFlagsTy ArgFlags = Outs[i].Flags;
+    Type *OrigTy = CLI ? CLI->getArgs()[Outs[i].OrigArgIndex].Ty : nullptr;
+
+    simABI::ABI ABI = MF.getSubtarget<simSubtarget>().getTargetABI();
+    if (Fn(MF.getDataLayout(), ABI, i, ArgVT, ArgVT, CCValAssign::Full,
+           ArgFlags, CCInfo, Outs[i].IsFixed, IsRet, OrigTy, *this,
+           FirstMaskArgument)) {
+      LLVM_DEBUG(dbgs() << "OutputArg #" << i << " has unhandled type "
+                        << EVT(ArgVT).getEVTString() << "\n");
+      llvm_unreachable(nullptr);
+    }
+  }
+}
+
+void simTargetLowering::analyzeInputArgs(
+    MachineFunction &MF, CCState &CCInfo,
+    const SmallVectorImpl<ISD::InputArg> &Ins, bool IsRet,
+    simCCAssignFn Fn) const {
+  unsigned NumArgs = Ins.size();
+  FunctionType *FType = MF.getFunction().getFunctionType();
+
+  Optional<unsigned> FirstMaskArgument;
+
+  for (unsigned i = 0; i != NumArgs; ++i) {
+    MVT ArgVT = Ins[i].VT;
+    ISD::ArgFlagsTy ArgFlags = Ins[i].Flags;
+
+    Type *ArgTy = nullptr;
+    if (IsRet)
+      ArgTy = FType->getReturnType();
+    else if (Ins[i].isOrigArg())
+      ArgTy = FType->getParamType(Ins[i].getOrigArgIndex());
+
+    simABI::ABI ABI = MF.getSubtarget<simSubtarget>().getTargetABI();
+    if (Fn(MF.getDataLayout(), ABI, i, ArgVT, ArgVT, CCValAssign::Full,
+           ArgFlags, CCInfo, /*IsFixed=*/true, IsRet, ArgTy, *this,
+           FirstMaskArgument)) {
+      LLVM_DEBUG(dbgs() << "InputArg #" << i << " has unhandled type "
+                        << EVT(ArgVT).getEVTString() << '\n');
+      llvm_unreachable(nullptr);
+    }
+  }
+}
+
 // TODO: rewrite
 // Lower a call to a callseq_start + CALL + callseq_end chain, and add input
 // and output parameter nodes.
@@ -312,20 +408,9 @@ SDValue simTargetLowering::LowerCall(CallLoweringInfo &CLI,
   SmallVector<CCValAssign, 16> ArgLocs;
   CCState ArgCCInfo(CallConv, IsVarArg, MF, ArgLocs, *DAG.getContext());
 
-  if (CallConv == CallingConv::GHC)
-    ArgCCInfo.AnalyzeCallOperands(Outs, CC_RISCV_GHC);
-  else
-    analyzeOutputArgs(MF, ArgCCInfo, Outs, /*IsRet=*/false, &CLI,
-                      CallConv == CallingConv::Fast ? CC_RISCV_FastCC
-                                                    : CC_RISCV);
+  analyzeOutputArgs(MF, ArgCCInfo, Outs, /*IsRet=*/false, &CLI, CC_sim);
 
-  // Check if it's really possible to do a tail call.
-  if (IsTailCall)
-    IsTailCall = isEligibleForTailCallOptimization(ArgCCInfo, CLI, MF, ArgLocs);
-
-  if (IsTailCall)
-    ++NumTailCalls;
-  else if (CLI.CB && CLI.CB->isMustTailCall())
+  if (CLI.CB && CLI.CB->isMustTailCall())
     report_fatal_error("failed to perform tail call elimination on a call "
                        "site marked musttail");
 
@@ -435,7 +520,7 @@ SDValue simTargetLowering::LowerCall(CallLoweringInfo &CLI,
 
       // Work out the address of the stack slot.
       if (!StackPtr.getNode())
-        StackPtr = DAG.getCopyFromReg(Chain, DL, RISCV::X2, PtrVT);
+        StackPtr = DAG.getCopyFromReg(Chain, DL, sim::X2, PtrVT);
       SDValue Address =
           DAG.getNode(ISD::ADD, DL, PtrVT, StackPtr,
                       DAG.getIntPtrConstant(VA.getLocMemOffset(), DL));
@@ -458,33 +543,23 @@ SDValue simTargetLowering::LowerCall(CallLoweringInfo &CLI,
     Glue = Chain.getValue(1);
   }
 
-  // Validate that none of the argument registers have been marked as
-  // reserved, if so report an error. Do the same for the return address if this
-  // is not a tailcall.
-  validateCCReservedRegs(RegsToPass, MF);
-  if (!IsTailCall &&
-      MF.getSubtarget<RISCVSubtarget>().isRegisterReservedByUser(RISCV::X1))
-    MF.getFunction().getContext().diagnose(DiagnosticInfoUnsupported{
-        MF.getFunction(),
-        "Return address register required, but has been reserved."});
-
   // If the callee is a GlobalAddress/ExternalSymbol node, turn it into a
   // TargetGlobalAddress/TargetExternalSymbol node so that legalize won't
   // split it and then direct call can be matched by PseudoCALL.
   if (GlobalAddressSDNode *S = dyn_cast<GlobalAddressSDNode>(Callee)) {
     const GlobalValue *GV = S->getGlobal();
 
-    unsigned OpFlags = RISCVII::MO_CALL;
+    unsigned OpFlags = simII::MO_CALL;
     if (!getTargetMachine().shouldAssumeDSOLocal(*GV->getParent(), GV))
-      OpFlags = RISCVII::MO_PLT;
+      OpFlags = simII::MO_PLT;
 
     Callee = DAG.getTargetGlobalAddress(GV, DL, PtrVT, 0, OpFlags);
   } else if (ExternalSymbolSDNode *S = dyn_cast<ExternalSymbolSDNode>(Callee)) {
-    unsigned OpFlags = RISCVII::MO_CALL;
+    unsigned OpFlags = simII::MO_CALL;
 
     if (!getTargetMachine().shouldAssumeDSOLocal(*MF.getFunction().getParent(),
                                                  nullptr))
-      OpFlags = RISCVII::MO_PLT;
+      OpFlags = simII::MO_PLT;
 
     Callee = DAG.getTargetExternalSymbol(S->getSymbol(), PtrVT, OpFlags);
   }
@@ -514,12 +589,7 @@ SDValue simTargetLowering::LowerCall(CallLoweringInfo &CLI,
   // Emit the call.
   SDVTList NodeTys = DAG.getVTList(MVT::Other, MVT::Glue);
 
-  if (IsTailCall) {
-    MF.getFrameInfo().setHasTailCall();
-    return DAG.getNode(RISCVISD::TAIL, DL, NodeTys, Ops);
-  }
-
-  Chain = DAG.getNode(RISCVISD::CALL, DL, NodeTys, Ops);
+  Chain = DAG.getNode(simISD::CALL, DL, NodeTys, Ops);
   DAG.addNoMergeSiteInfo(Chain.getNode(), CLI.NoMerge);
   Glue = Chain.getValue(1);
 
@@ -533,7 +603,7 @@ SDValue simTargetLowering::LowerCall(CallLoweringInfo &CLI,
   // Assign locations to each value returned by this call.
   SmallVector<CCValAssign, 16> RVLocs;
   CCState RetCCInfo(CallConv, IsVarArg, MF, RVLocs, *DAG.getContext());
-  analyzeInputArgs(MF, RetCCInfo, Ins, /*IsRet=*/true, CC_RISCV);
+  analyzeInputArgs(MF, RetCCInfo, Ins, /*IsRet=*/true, CC_sim);
 
   // Copy all of the result registers out of their specified physreg.
   for (auto &VA : RVLocs) {
@@ -543,16 +613,6 @@ SDValue simTargetLowering::LowerCall(CallLoweringInfo &CLI,
     // Glue the RetValue to the end of the call sequence
     Chain = RetValue.getValue(1);
     Glue = RetValue.getValue(2);
-
-    if (VA.getLocVT() == MVT::i32 && VA.getValVT() == MVT::f64) {
-      assert(VA.getLocReg() == ArgGPRs[0] && "Unexpected reg assignment");
-      SDValue RetValue2 =
-          DAG.getCopyFromReg(Chain, DL, ArgGPRs[1], MVT::i32, Glue);
-      Chain = RetValue2.getValue(1);
-      Glue = RetValue2.getValue(2);
-      RetValue = DAG.getNode(RISCVISD::BuildPairF64, DL, MVT::f64, RetValue,
-                             RetValue2);
-    }
 
     RetValue = convertLocVTToValVT(DAG, RetValue, VA, DL, Subtarget);
 
@@ -574,49 +634,6 @@ struct ArgDataPair {
 };
 
 } // end anonymous namespace
-
-// TODO: rewrite
-static SDValue convertValVTToLocVT(SelectionDAG &DAG, SDValue Val,
-                                   const CCValAssign &VA, const SDLoc &DL,
-                                   const simSubtarget &Subtarget) {
-  EVT LocVT = VA.getLocVT();
-
-  if (VA.getValVT() == MVT::f32)
-    llvm_unreachable("");
-
-  switch (VA.getLocInfo()) {
-  default:
-    llvm_unreachable("Unexpected CCValAssign::LocInfo");
-  case CCValAssign::Full:
-    break;
-  case CCValAssign::BCvt:
-    llvm_unreachable("");
-    Val = DAG.getNode(ISD::BITCAST, DL, LocVT, Val);
-    break;
-  }
-  return Val;
-}
-
-// Convert Val to a ValVT. Should not be called for CCValAssign::Indirect
-// values.
-// TODO: rewrite
-static SDValue convertLocVTToValVT(SelectionDAG &DAG, SDValue Val,
-                                   const CCValAssign &VA, const SDLoc &DL,
-                                   const simSubtarget &Subtarget) {
-  if (VA.getValVT() == MVT::f32)
-    llvm_unreachable("");
-
-  switch (VA.getLocInfo()) {
-  default:
-    llvm_unreachable("Unexpected CCValAssign::LocInfo");
-  case CCValAssign::Full:
-    break;
-  case CCValAssign::BCvt:
-    llvm_unreachable("");
-    Val = DAG.getNode(ISD::BITCAST, DL, VA.getValVT(), Val);
-  }
-  return Val;
-}
 
 // TODO: rewrite
 static SDValue unpackFromRegLoc(SelectionDAG &DAG, SDValue Chain,
@@ -674,24 +691,44 @@ SDValue simTargetLowering::LowerFormalArguments(
     SDValue Chain, CallingConv::ID CallConv, bool IsVarArg,
     const SmallVectorImpl<ISD::InputArg> &Ins, const SDLoc &DL,
     SelectionDAG &DAG, SmallVectorImpl<SDValue> &InVals) const {
+  MachineFunction &MF = DAG.getMachineFunction();
+
   switch (CallConv) {
   default:
     report_fatal_error("Unsupported calling convention");
   case CallingConv::C:
   case CallingConv::Fast:
     break;
+  case CallingConv::GHC:
+      report_fatal_error(
+        "GHC calling convention requires the F and D instruction set extensions");
   }
 
-  MachineFunction &MF = DAG.getMachineFunction();
+  const Function &Func = MF.getFunction();
+  if (Func.hasFnAttribute("interrupt")) {
+    if (!Func.arg_empty())
+      report_fatal_error(
+        "Functions with the interrupt attribute cannot have arguments!");
+
+    StringRef Kind =
+      MF.getFunction().getFnAttribute("interrupt").getValueAsString();
+
+    if (!(Kind == "user" || Kind == "supervisor" || Kind == "machine"))
+      report_fatal_error(
+        "Function interrupt attribute argument not supported!");
+  }
+
   EVT PtrVT = getPointerTy(DAG.getDataLayout());
-  unsigned StackSlotSize = MVT(MVT::i32).getSizeInBits() / 8;
+  MVT XLenVT = Subtarget.getXLenVT();
+  unsigned XLenInBytes = Subtarget.getXLen() / 8;
   // Used with vargs to acumulate store chains.
   std::vector<SDValue> OutChains;
 
   // Assign locations to all of the incoming arguments.
   SmallVector<CCValAssign, 16> ArgLocs;
   CCState CCInfo(CallConv, IsVarArg, MF, ArgLocs, *DAG.getContext());
-  CCInfo.AnalyzeFormalArguments(Ins, CC_sim);
+
+  analyzeInputArgs(MF, CCInfo, Ins, /*IsRet=*/false, CC_sim);
 
   for (unsigned i = 0, e = ArgLocs.size(); i != e; ++i) {
     CCValAssign &VA = ArgLocs[i];
@@ -702,15 +739,22 @@ SDValue simTargetLowering::LowerFormalArguments(
       ArgValue = unpackFromMemLoc(DAG, Chain, VA, DL);
 
     if (VA.getLocInfo() == CCValAssign::Indirect) {
+      // If the original argument was split and passed by reference (e.g. i128
+      // on RV32), we need to load all parts of it here (using the same
+      // address). Vectors may be partly split to registers and partly to the
+      // stack, in which case the base address is partly offset and subsequent
+      // stores are relative to that.
       InVals.push_back(DAG.getLoad(VA.getValVT(), DL, Chain, ArgValue,
                                    MachinePointerInfo()));
       unsigned ArgIndex = Ins[i].OrigArgIndex;
       unsigned ArgPartOffset = Ins[i].PartOffset;
-      assert(ArgPartOffset == 0);
+      assert(VA.getValVT().isVector() || ArgPartOffset == 0);
       while (i + 1 != e && Ins[i + 1].OrigArgIndex == ArgIndex) {
         CCValAssign &PartVA = ArgLocs[i + 1];
         unsigned PartOffset = Ins[i + 1].PartOffset - ArgPartOffset;
         SDValue Offset = DAG.getIntPtrConstant(PartOffset, DL);
+        if (PartVA.getValVT().isScalableVector())
+          Offset = DAG.getNode(ISD::VSCALE, DL, XLenVT, Offset);
         SDValue Address = DAG.getNode(ISD::ADD, DL, PtrVT, ArgValue, Offset);
         InVals.push_back(DAG.getLoad(PartVA.getValVT(), DL, Chain, Address,
                                      MachinePointerInfo()));
@@ -727,8 +771,11 @@ SDValue simTargetLowering::LowerFormalArguments(
     const TargetRegisterClass *RC = &sim::GPRRegClass;
     MachineFrameInfo &MFI = MF.getFrameInfo();
     MachineRegisterInfo &RegInfo = MF.getRegInfo();
-    simFunctionInfo *UFI = MF.getInfo<simFunctionInfo>();
+    simFunctionInfo *RVFI = MF.getInfo<simFunctionInfo>();
 
+    // Offset of the first variable argument from stack pointer, and size of
+    // the vararg save area. For now, the varargs save area is either zero or
+    // large enough to hold a0-a7.
     int VaArgOffset, VarArgsSaveSize;
 
     // If all registers are allocated, then all varargs must be passed on the
@@ -737,32 +784,31 @@ SDValue simTargetLowering::LowerFormalArguments(
       VaArgOffset = CCInfo.getNextStackOffset();
       VarArgsSaveSize = 0;
     } else {
-      VarArgsSaveSize = StackSlotSize * (ArgRegs.size() - Idx);
+      VarArgsSaveSize = XLenInBytes * (ArgRegs.size() - Idx);
       VaArgOffset = -VarArgsSaveSize;
     }
 
     // Record the frame index of the first variable argument
     // which is a value necessary to VASTART.
-    int FI = MFI.CreateFixedObject(StackSlotSize, VaArgOffset, true);
-    UFI->setVarArgsFrameIndex(FI);
+    int FI = MFI.CreateFixedObject(XLenInBytes, VaArgOffset, true);
+    RVFI->setVarArgsFrameIndex(FI);
 
     // If saving an odd number of registers then create an extra stack slot to
     // ensure that the frame pointer is 2*XLEN-aligned, which in turn ensures
     // offsets to even-numbered registered remain 2*XLEN-aligned.
     if (Idx % 2) {
-      MFI.CreateFixedObject(StackSlotSize, VaArgOffset - (int)StackSlotSize,
-                            true);
-      VarArgsSaveSize += StackSlotSize;
+      MFI.CreateFixedObject(XLenInBytes, VaArgOffset - (int)XLenInBytes, true);
+      VarArgsSaveSize += XLenInBytes;
     }
 
     // Copy the integer registers that may have been used for passing varargs
     // to the vararg save area.
     for (unsigned I = Idx; I < ArgRegs.size();
-         ++I, VaArgOffset += StackSlotSize) {
+         ++I, VaArgOffset += XLenInBytes) {
       const Register Reg = RegInfo.createVirtualRegister(RC);
       RegInfo.addLiveIn(ArgRegs[I], Reg);
-      SDValue ArgValue = DAG.getCopyFromReg(Chain, DL, Reg, MVT::i32);
-      FI = MFI.CreateFixedObject(StackSlotSize, VaArgOffset, true);
+      SDValue ArgValue = DAG.getCopyFromReg(Chain, DL, Reg, XLenVT);
+      FI = MFI.CreateFixedObject(XLenInBytes, VaArgOffset, true);
       SDValue PtrOff = DAG.getFrameIndex(FI, getPointerTy(DAG.getDataLayout()));
       SDValue Store = DAG.getStore(Chain, DL, ArgValue, PtrOff,
                                    MachinePointerInfo::getFixedStack(MF, FI));
@@ -771,7 +817,7 @@ SDValue simTargetLowering::LowerFormalArguments(
           ->setValue((Value *)nullptr);
       OutChains.push_back(Store);
     }
-    UFI->setVarArgsSaveSize(VarArgsSaveSize);
+    RVFI->setVarArgsSaveSize(VarArgsSaveSize);
   }
 
   // All stores are grouped in one node to allow the matching between
@@ -793,10 +839,18 @@ bool simTargetLowering::CanLowerReturn(
     const SmallVectorImpl<ISD::OutputArg> &Outs, LLVMContext &Context) const {
   SmallVector<CCValAssign, 16> RVLocs;
   CCState CCInfo(CallConv, IsVarArg, MF, RVLocs, Context);
-  if (!CCInfo.CheckReturn(Outs, RetCC_sim))
-    return false;
-  if (CCInfo.getNextStackOffset() != 0 && IsVarArg)
-    llvm_unreachable(""); // TODO: what for
+
+  Optional<unsigned> FirstMaskArgument;
+
+  for (unsigned i = 0, e = Outs.size(); i != e; ++i) {
+    MVT VT = Outs[i].VT;
+    ISD::ArgFlagsTy ArgFlags = Outs[i].Flags;
+    simABI::ABI ABI = MF.getSubtarget<simSubtarget>().getTargetABI();
+    if (CC_sim(MF.getDataLayout(), ABI, i, VT, VT, CCValAssign::Full,
+                 ArgFlags, CCInfo, /*IsFixed=*/true, /*IsRet=*/true, nullptr,
+                 *this, FirstMaskArgument))
+      return false;
+  }
   return true;
 }
 
@@ -817,7 +871,11 @@ simTargetLowering::LowerReturn(SDValue Chain, CallingConv::ID CallConv,
   CCState CCInfo(CallConv, IsVarArg, DAG.getMachineFunction(), RVLocs,
                  *DAG.getContext());
 
-  CCInfo.AnalyzeReturn(Outs, RetCC_sim);
+  analyzeOutputArgs(DAG.getMachineFunction(), CCInfo, Outs, /*IsRet=*/true,
+                    nullptr, CC_sim);
+
+  if (CallConv == CallingConv::GHC && !RVLocs.empty())
+    report_fatal_error("GHC functions return void only");
 
   SDValue Glue;
   SmallVector<SDValue, 4> RetOps(1, Chain);
@@ -828,20 +886,45 @@ simTargetLowering::LowerReturn(SDValue Chain, CallingConv::ID CallConv,
     CCValAssign &VA = RVLocs[i];
     assert(VA.isRegLoc() && "Can only return in registers!");
 
-    Val = convertValVTToLocVT(DAG, Val, VA, DL, STI);
-    Chain = DAG.getCopyToReg(Chain, DL, VA.getLocReg(), Val, Glue);
+    {
+      // Handle a 'normal' return.
+      Val = convertValVTToLocVT(DAG, Val, VA, DL, Subtarget);
+      Chain = DAG.getCopyToReg(Chain, DL, VA.getLocReg(), Val, Glue);
 
-    // Guarantee that all emitted copies are stuck together.
-    Glue = Chain.getValue(1);
-    RetOps.push_back(DAG.getRegister(VA.getLocReg(), VA.getLocVT()));
+      // Guarantee that all emitted copies are stuck together.
+      Glue = Chain.getValue(1);
+      RetOps.push_back(DAG.getRegister(VA.getLocReg(), VA.getLocVT()));
+    }
   }
 
   RetOps[0] = Chain; // Update chain.
+
   // Add the glue node if we have it.
   if (Glue.getNode()) {
     RetOps.push_back(Glue);
   }
-  return DAG.getNode(simISD::RET, DL, MVT::Other, RetOps);
+
+  unsigned RetOpc = simISD::RET_FLAG;
+  // Interrupt service routines use different return instructions.
+  const Function &Func = DAG.getMachineFunction().getFunction();
+  if (Func.hasFnAttribute("interrupt")) {
+    if (!Func.getReturnType()->isVoidTy())
+      report_fatal_error(
+          "Functions with the interrupt attribute must have void return type!");
+
+    MachineFunction &MF = DAG.getMachineFunction();
+    StringRef Kind =
+      MF.getFunction().getFnAttribute("interrupt").getValueAsString();
+
+    if (Kind == "user")
+      RetOpc = simISD::URET_FLAG;
+    else if (Kind == "supervisor")
+      RetOpc = simISD::SRET_FLAG;
+    else
+      RetOpc = simISD::MRET_FLAG;
+  }
+
+  return DAG.getNode(RetOpc, DL, MVT::Other, RetOps);
 }
 
 //===----------------------------------------------------------------------===//
@@ -923,7 +1006,7 @@ SDValue simTargetLowering::lowerBR_CC(SDValue Op, SelectionDAG &DAG) const {
 
 SDValue simTargetLowering::lowerFRAMEADDR(SDValue Op,
                                            SelectionDAG &DAG) const {
-  const simRegisterInfo &RI = *STI.getRegisterInfo();
+  const simRegisterInfo &RI = *Subtarget.getRegisterInfo();
   MachineFunction &MF = DAG.getMachineFunction();
   MachineFrameInfo &MFI = MF.getFrameInfo();
   MFI.setFrameAddressIsTaken(true);
