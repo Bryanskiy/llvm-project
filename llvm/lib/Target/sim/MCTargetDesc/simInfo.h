@@ -46,6 +46,12 @@ enum OperandType : unsigned {
 } // namespace simOp
 
 namespace simABI {
+
+enum ABI {
+  ABI_ILP32,
+  ABI_Unknown
+};
+
 // Returns the register used to hold the stack pointer after realignment.
 MCRegister getBPReg();
 
