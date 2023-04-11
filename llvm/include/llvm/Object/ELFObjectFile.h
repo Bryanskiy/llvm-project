@@ -1213,6 +1213,8 @@ StringRef ELFObjectFile<ELFT>::getFileFormatName() const {
       return "elf32-amdgpu";
     case ELF::EM_LOONGARCH:
       return "elf32-loongarch";
+    case ELF::EM_sim:
+      return "elf32-sim";
     default:
       return "elf32-unknown";
     }
@@ -1297,6 +1299,9 @@ template <class ELFT> Triple::ArchType ELFObjectFile<ELFT>::getArch() const {
     }
   case ELF::EM_S390:
     return Triple::systemz;
+
+  case ELF::EM_sim:
+    return Triple::sim;
 
   case ELF::EM_SPARC:
   case ELF::EM_SPARC32PLUS:

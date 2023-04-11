@@ -378,6 +378,8 @@ set(LLVM_ALL_TARGETS
   NVPTX
   PowerPC
   RISCV
+  GArch
+  sim
   Sparc
   SystemZ
   VE

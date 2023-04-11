@@ -11551,6 +11551,8 @@ RISCVTargetLowering::LowerReturn(SDValue Chain, CallingConv::ID CallConv,
     RetOps.push_back(Glue);
   }
 
+cmake ../llvm-project/ -S ../llvm-project/llvm -B ./ -G "Ninja" -DLLVM_ENABLE_PROJECTS="clang" -DCMAKE_INSTALL_PREFIX=../install -DCMAKE_BUILD_TYPE=Release -DLLVM_ENABLE_ASSERTIONS=On -DLLVM_TARGETS_TO_BUILD="X86;RISCV" -DLLVM_EXPERIMENTAL_TARGETS_TO_BUILD=sim -DCMAKE_CXX_COMPILER=clang++  -DLLVM_ENABLE_LLD=On
+
   unsigned RetOpc = RISCVISD::RET_FLAG;
   // Interrupt service routines use different return instructions.
   const Function &Func = DAG.getMachineFunction().getFunction();
